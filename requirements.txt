@@ -4,5 +4,6 @@ pandas
 numpy
 tqdm
 pyarrow
+cvxpy
 jupyter
 nbconvert

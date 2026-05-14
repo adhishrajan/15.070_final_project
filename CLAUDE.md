@@ -15,7 +15,7 @@ Main deliverables: `portfolio_study.ipynb` (experiments) + `main.tex` (paper for
 
 ---
 
-## Status: COMPLETE (last run 2026-05-14)
+## Status: COMPLETE (last run 2026-05-14, Experiment G added 2026-05-14)
 
 Notebook runs end-to-end without errors. All figures saved in `figures/`.
 `main.tex` populated with real output numbers. Upload to Overleaf as-is.
@@ -31,6 +31,16 @@ Notebook runs end-to-end without errors. All figures saved in `figures/`.
 - Greedy gap at k=200 (n=462): 4.75% (gap converges slowly with large N)
 - Feasible subsets (n=35, k=5): 99.5% (323,027 / 324,632)
 - 99% of optimal achieved by sampling 34.17% of search space
+
+**Experiment G — LASSO relaxation (n=30, BF_TICKERS):**
+- λ range: logspace(-3, 0, 100). Threshold tol=0.01 (1% min weight).
+- k_eff range achieved: **9–26** (floor at k=9, long-only)
+- Gross exposure ‖w‖₁ range: 1.000–4.023
+- Long-only floor: k=9, return **41.31%** (LLY/NVDA/AVGO/AMD/JNJ/ABBV/TSLA/AMZN/UNH)
+- Key finding: L1 penalty reduces gross exposure (eliminates shorts) not cardinality directly.
+  Once long-only (‖w‖₁=1), cannot reduce k further via L1 alone.
+- Price of convexification at matched k: LASSO trails SA by 2.3%–8.9% depending on k
+- All 30 BF_TICKERS have individual vol > σ₀; feasible singletons: V, JNJ, PFE, MRK
 
 ---
 

@@ -16,6 +16,8 @@ build_notebook.py
 /fig5_gap_vs_k.png
 /fig6_constraint_tightness.png
 /fig7_random_sampling.png
+/fig8_lasso_path.png
+/fig9_lasso_comparison.png
 
 # Raw close-price parquet (only adjusted-return parquet needed for replication)
 sp500_close.parquet

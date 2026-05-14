@@ -39,14 +39,17 @@ exact enumeration infeasible for realistic values.  We exploit the closed-form
 inner solution to evaluate each candidate $k$-subset exactly and efficiently, and
 we compare four approaches: the Markowitz upper bound (no cardinality), brute-force
 enumeration, a greedy forward-selection heuristic, and simulated annealing
-(SA)---interpreted as a Markov chain on the space of $k$-subsets.  Our experiments
-quantify (i)~the exponential blow-up in search space and runtime,
-(ii)~the quality gap between heuristics and the exact optimum,
+(SA)---interpreted as a Markov chain on the space of $k$-subsets.  We further
+study the standard convex relaxation of the cardinality constraint, which replaces
+the L0 penalty $\lambda\|\mathbf{w}\|_0$ with an L1 penalty $\lambda\|\mathbf{w}\|_1$
+in the objective (LASSO-type regularisation) and is solvable as a second-order cone
+programme.  Our experiments quantify (i)~the exponential blow-up in search space
+and runtime, (ii)~the quality gap between heuristics and the exact optimum,
 (iii)~SA convergence behaviour as a function of chain length, $k$, and $n$,
 (iv)~the cost of the cardinality constraint as $k$ grows toward~$N$,
-(v)~the sensitivity of algorithmic hardness to the tightness of the risk
-constraint, and (vi)~how much of the search space must be sampled to find a
-near-optimal portfolio.
+(v)~the sensitivity of algorithmic hardness to the tightness of the risk constraint,
+(vi)~how much of the search space must be sampled to find a near-optimal portfolio,
+and (vii)~the regularisation path and long-only floor of the L1 relaxation.
 \end{abstract}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +188,64 @@ independent set of $G$; the reduction runs in polynomial time
 problem~\eqref{eq:card} is expected to exist (unless $\mathsf{P}=\mathsf{NP}$),
 and the exponential growth of $\binom{N}{k}$ confirmed empirically in
 Experiment~A (\S\ref{sec:expA}) is a direct manifestation of this hardness.
+
+\subsection{L1 Relaxation (LASSO-Type Surrogate)}
+\label{sec:lasso_theory}
+
+Because problem~\eqref{eq:card} is NP-hard, a natural approach is to replace
+the intractable $\ell_0$ constraint with a convex surrogate.  The standard choice
+is to move the $\ell_0$ penalty into the objective and replace it with the $\ell_1$
+norm \cite{Tibshirani1996}:
+\begin{equation}
+  \max_{\mathbf{w}\in\mathbb{R}^n}\;
+    \boldsymbol{\mu}^\top\mathbf{w} - \lambda\|\mathbf{w}\|_1
+  \quad\text{s.t.}\quad
+  \mathbf{w}^\top\boldsymbol{\Sigma}\mathbf{w}\leq\sigma_0^2,\;
+  \mathbf{1}^\top\mathbf{w}=1,
+  \label{eq:lasso}
+\end{equation}
+where $\lambda\geq 0$ controls the trade-off between expected return and gross
+exposure $\|\mathbf{w}\|_1 = \sum_i|w_i|$.  Problem~\eqref{eq:lasso} is a
+second-order cone programme (SOCP) and is solvable in polynomial time.
+
+\paragraph{KKT conditions and soft-thresholding.}
+The Lagrangian of~\eqref{eq:lasso} includes a non-smooth term from $\|\mathbf{w}\|_1$.
+The first-order KKT stationarity condition at the optimum $\mathbf{w}^*$ is
+\begin{equation}
+  \mu_i \;-\; 2\gamma\bigl(\boldsymbol{\Sigma}\mathbf{w}^*\bigr)_i \;-\; \nu
+  \;\in\; \lambda\,\partial|w_i^*|,
+  \label{eq:lasso_kkt}
+\end{equation}
+where $\gamma\geq 0$ is the Lagrange multiplier on the variance constraint and $\nu$
+enforces the budget.  The subdifferential $\partial|w_i^*|$ equals $\{\operatorname{sign}(w_i^*)\}$ for
+$w_i^*\neq 0$ and $[-1,+1]$ for $w_i^*=0$.  Condition~\eqref{eq:lasso_kkt} yields
+a soft-thresholding rule: stock~$i$ is \emph{excluded} ($w_i^*=0$) if and only if
+\begin{equation}
+  \bigl|\mu_i - 2\gamma\bigl(\boldsymbol{\Sigma}\mathbf{w}^*\bigr)_i - \nu\bigr|
+  \;\leq\; \lambda,
+  \label{eq:exclusion}
+\end{equation}
+i.e.\ its risk-adjusted excess return lies within the penalty band $[-\lambda,\lambda]$.
+This is the portfolio analogue of the LASSO soft-thresholding rule in regression.
+Unlike regression LASSO, however, the threshold in~\eqref{eq:exclusion} is
+asset-specific through the covariance term $(\boldsymbol{\Sigma}\mathbf{w}^*)_i$,
+so there is no closed-form solution and a numerical solver is required.
+
+\paragraph{The long-only floor.}
+A structural limitation of the $\ell_1$ penalty arises from the budget constraint
+$\mathbf{1}^\top\mathbf{w}=1$.  For a portfolio with only long positions
+($w_i\geq 0$ for all $i$), the gross exposure equals the budget:
+$\|\mathbf{w}\|_1=\mathbf{1}^\top\mathbf{w}=1$.  Once~\eqref{eq:lasso} has
+eliminated all short positions, increasing $\lambda$ further leaves $\|\mathbf{w}\|_1$
+fixed at its minimum of $1$ for any allocation of the budget.  The $\ell_1$
+penalty therefore cannot distinguish among long-only portfolios with different
+cardinalities: all achieve the same penalty $\lambda\cdot 1$.  Consequently,
+the LASSO path reaches a \emph{long-only floor}: a minimum cardinality
+$k_{\min}^{\ell_1}$ beyond which further sparsification is impossible via $\ell_1$
+regularisation alone.  The L1 penalty confounds \emph{gross-exposure reduction}
+(eliminating short positions) with \emph{cardinality reduction} (selecting fewer
+stocks), conflating two structurally different operations into a single penalty.
+This limitation is studied empirically in Experiment~G (\S\ref{sec:expG}).
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Data}
@@ -616,6 +677,92 @@ near-optimal portfolios in the search space explains the fast practical
 convergence of SA despite $|\mathcal{X}|=\binom{N}{k}$ growing super-exponentially
 with $N$.
 
+\subsection{Experiment G: LASSO Relaxation}
+\label{sec:expG}
+
+We solve problem~\eqref{eq:lasso} on the same $n=30$ BF\_TICKERS sub-universe
+as Experiment~B, sweeping $\lambda$ over 100 log-spaced values from $10^{-3}$
+to $1$.  All 30 large-cap stocks in BF\_TICKERS have individual volatility above
+the risk limit $\sigma_0=25.64\%$; only four names (V, JNJ, PFE, MRK) can form a
+feasible single-stock portfolio.
+
+\paragraph{Regularisation path.}
+Figure~\ref{fig:lasso_path} traces the LASSO regularisation path.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig8_lasso_path.png}
+  \caption{LASSO regularisation path ($n=30$, $\sigma_0=25.64\%$).
+    \textit{Left}: annualised return vs.\ $\lambda$.
+    \textit{Centre}: gross exposure $\|\mathbf{w}\|_1$ vs.\ $\lambda$;
+      the red dashed line marks $\|\mathbf{w}\|_1=1$ (long-only).
+    \textit{Right}: effective cardinality $k_{\text{eff}}$ (weights $>1\%$ in
+      magnitude) vs.\ $\lambda$; the dashed line marks the long-only floor $k=9$.}
+  \label{fig:lasso_path}
+\end{figure}
+
+At small $\lambda$ the LASSO solution approximates the dense Markowitz portfolio
+($k_{\text{eff}}=26$, $\|\mathbf{w}\|_1=4.02$, return $47.79\%$).  As $\lambda$
+increases, the penalty progressively shrinks short positions: gross exposure falls
+monotonically toward $1$, and $k_{\text{eff}}$ decreases from 26 to~9.  Once
+$\|\mathbf{w}\|_1=1$ is reached (all weights non-negative), the path stalls:
+$k_{\text{eff}}$ remains at~9 and the return stabilises at $41.31\%$
+for all $\lambda \gtrsim 0.06$.
+
+This is a direct empirical manifestation of the \emph{long-only floor} derived in
+\S\ref{sec:lasso_theory}: the $\ell_1$ penalty can reduce gross exposure but cannot
+reduce cardinality below the minimum long-only feasible count for this universe.
+The floor $k_{\min}^{\ell_1}=9$ is a structural property of the data and the risk
+constraint, not of the algorithm.
+
+\paragraph{Comparison with cardinality-constrained methods.}
+Figure~\ref{fig:lasso_comparison} compares LASSO (at the $k_{\text{eff}}$ values
+it achieves) with SA and greedy on the same universe.
+Table~\ref{tab:lasso_comparison} quantifies the \emph{price of convexification}:
+the return gap between the exact L0 methods and the L1 surrogate at matched
+effective cardinality.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\linewidth]{figures/fig9_lasso_comparison.png}
+  \caption{Method comparison ($n=30$, $\sigma_0=25.64\%$).
+    LASSO is plotted only at the $k_{\text{eff}}$ values it achieves ($k\geq 9$);
+    the vertical dotted line marks its long-only floor at $k=9$.
+    Brute-force stars give the exact optimum for $k\leq 5$.}
+  \label{fig:lasso_comparison}
+\end{figure}
+
+\begin{table}[ht]
+\centering
+\caption{Price of convexification: LASSO return vs.\ SA and greedy at matched
+  effective cardinality ($n=30$, $\sigma_0=25.64\%$).
+  Negative gaps indicate LASSO underperforms the L0 method.}
+\label{tab:lasso_comparison}
+\begin{tabular}{rcccrr}
+\toprule
+$k$ & SA & Greedy & LASSO & LASSO$-$SA & LASSO$-$Greedy \\
+\midrule
+ 9 & $44.62\%$ & $42.70\%$ & $41.31\%$ & $-7.40\%$ & $-3.25\%$ \\
+10 & $45.18\%$ & $43.68\%$ & $41.45\%$ & $-8.25\%$ & $-5.10\%$ \\
+12 & $45.82\%$ & $45.60\%$ & $41.73\%$ & $-8.91\%$ & $-8.48\%$ \\
+15 & $46.71\%$ & $46.46\%$ & $43.67\%$ & $-6.51\%$ & $-6.02\%$ \\
+17 & $47.19\%$ & $46.96\%$ & $45.22\%$ & $-4.16\%$ & $-3.70\%$ \\
+19 & $47.51\%$ & $47.40\%$ & $46.41\%$ & $-2.31\%$ & $-2.09\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two observations stand out.  First, LASSO consistently underperforms both SA
+and greedy at every matched cardinality level.  The gap is largest at $k=12$
+($-8.91\%$ vs.\ SA) and narrows as $k$ grows toward the Markowitz UB ($47.79\%$),
+because the L1 penalty has less work to do when the unconstrained solution is already
+close to long-only.  Second, the LASSO floor at $k=9$ ($41.31\%$) lies below the
+brute-force optimum at $k=5$ ($41.79\%$), yet uses $80\%$ more stocks.
+This illustrates the key cost of the L1 relaxation: it cannot replicate the
+short-selling strategy that allows exact methods to achieve high returns with few
+stocks.  The exact $k=5$ solution (NVDA, JPM, WFC, JNJ, LLY) uses a mix of
+long and short positions ($\|\mathbf{w}\|_1>1$) that is penalised out of the
+LASSO path.
+
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Discussion}
 \label{sec:discussion}
@@ -657,15 +804,27 @@ diversified $N$-stock portfolio variance ($\approx 3.26\%$ annualised) would
 produce a limit far below $\sigma^2_{\min,S}$ for small $k$, rendering every
 inner problem infeasible.
 
+\paragraph{L1 relaxation and the long-only floor.}
+Experiment~G reveals that the L1 penalty in the LASSO surrogate~\eqref{eq:lasso}
+operates primarily by eliminating short positions (reducing $\|\mathbf{w}\|_1$
+from 4.02 to 1), not by directly selecting fewer stocks.  Once the solution is
+long-only, further sparsification via $\ell_1$ is structurally impossible (the
+floor at $k=9$), and the price of convexification is substantial: LASSO at $k=9$
+yields $41.31\%$, below SA at $k=5$ ($41.79\%$) which uses short positions to
+concentrate return in fewer stocks.  These results suggest that the L1 surrogate
+is most appropriate when short selling is restricted by mandate, or when gross
+exposure is the primary concern rather than stock-count reduction.
+
 \paragraph{Estimation risk.}
 With $T/N\approx 6$, the full $462\times 462$ sample covariance matrix
 is near-rank-deficient, so the Markowitz upper bound of $120.24\%$ reflects
 in-sample optimisation under noisy estimates rather than a meaningful out-of-sample
 target (see \S\ref{sec:rmt}).  The cardinality-constrained results for $k\leq 30$
 are unaffected, as the corresponding $k\times k$ sub-matrices satisfy $T/k>90$.
-Shrinkage estimators (e.g.\ Ledoit--Wolf) or factor models would improve the
-conditioning of $\hat{\boldsymbol{\Sigma}}$ and yield more reliable estimates of
-the Markowitz upper bound, but are outside the scope of this study.
+Shrinkage estimators (e.g.\ Ledoit--Wolf \cite{LedoitWolf2004}) or factor models
+would improve the conditioning of $\hat{\boldsymbol{\Sigma}}$ and yield more
+reliable estimates of the Markowitz upper bound; this is a natural direction for
+future work.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusion}
@@ -698,6 +857,15 @@ The key findings are:
   \item $99.5\%$ of all 5-subsets of 35 stocks are feasible; random search
     achieves $99\%$ of the optimal return by sampling $34.17\%$ of the search
     space, confirming a dense return landscape near the optimum.
+  \item The L1 (LASSO) relaxation of the cardinality constraint is solvable as
+    an SOCP but reveals a structural limitation: it reduces cardinality by
+    eliminating short positions (gross exposure $\|\mathbf{w}\|_1$ falls from
+    4.02 to~1), not by directly selecting fewer stocks.  Once the portfolio is
+    long-only, further sparsification is impossible via $\ell_1$ alone.  The
+    resulting \emph{long-only floor} at $k=9$ yields $41.31\%$, below the
+    exact $k=5$ optimum ($41.79\%$) that exploits short selling.
+    The price of convexification at matched cardinality ranges from $-2.3\%$
+    to $-8.9\%$ vs.\ SA.
 \end{enumerate}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -719,6 +887,16 @@ W.~H.\ Freeman, New York.
 Mar\v{c}enko, V.~A.\ and Pastur, L.~A.\ (1967).
 Distribution of eigenvalues for some sets of random matrices.
 \textit{Mathematics of the USSR-Sbornik}, 1(4), 457--483.
+
+\bibitem{Tibshirani1996}
+Tibshirani, R.\ (1996).
+Regression shrinkage and selection via the lasso.
+\textit{Journal of the Royal Statistical Society: Series B}, 58(1), 267--288.
+
+\bibitem{LedoitWolf2004}
+Ledoit, O.\ and Wolf, M.\ (2004).
+A well-conditioned estimator for large-dimensional covariance matrices.
+\textit{Journal of Multivariate Analysis}, 88(2), 365--411.
 
 \end{thebibliography}
 
