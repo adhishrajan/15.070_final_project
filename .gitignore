@@ -1,0 +1,34 @@
+# Scratch / draft notebooks
+draft.ipynb
+return_data_daily.ipynb
+build_notebook.py
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+.notebook/
+
+# Duplicate root-level figures (canonical copies are in figures/)
+/fig0_data_overview.png
+/fig1_socp_weights.png
+/fig2_scaling.png
+/fig3_quality_comparison.png
+/fig4_sa_convergence.png
+/fig5_gap_vs_k.png
+/fig6_constraint_tightness.png
+/fig7_random_sampling.png
+
+# Raw close-price parquet (only adjusted-return parquet needed for replication)
+sp500_close.parquet
+
+# PDFs (paper is compiled from main.tex on Overleaf)
+*.pdf
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
