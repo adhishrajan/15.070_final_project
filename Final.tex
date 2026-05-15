@@ -1,0 +1,1067 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{enumitem}
+
+\newtheorem{theorem}{Theorem}
+
+
+
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, citecolor=blue!60!black,
+            urlcolor=blue!60!black}
+
+\title{\textbf{Cardinality-Constrained Portfolio Optimization:\\[4pt]
+Empirical Computational Hardness on S\&P~500 Data}}
+\author{Aashrit Cunchala \and Aymen Marzak \and Adhish Rajan \and Jean SainteBeuve \and Clarys Vignal}
+\date{Spring 2026 \quad --- \quad Discrete Probability and Stochastic Processes}
+
+\begin{document}
+\maketitle
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{abstract}
+% ─────────────────────────────────────────────────────────────────────────────
+We study the problem of selecting a portfolio of exactly $k$ assets from a
+universe of $N=462$ S\&P~500 stocks to maximise expected return subject
+to a variance constraint, with short selling allowed.  Without a cardinality
+restriction the problem reduces to the classical Markowitz mean-variance
+optimisation, which admits a closed-form solution via the two-fund separation
+theorem.  Adding the constraint $|\operatorname{supp}(\mathbf{w})|=k$ makes the
+search space $\binom{N}{k}$, which grows super-exponentially in $N$ and renders
+exact enumeration infeasible for realistic values.  We exploit the closed-form
+inner solution to evaluate each candidate $k$-subset exactly and efficiently, and
+we compare four approaches: the Markowitz upper bound (no cardinality), brute-force
+enumeration, a greedy forward-selection heuristic, and simulated annealing
+(SA)---interpreted as a Markov chain on the space of $k$-subsets.  We further
+study the standard convex relaxation of the cardinality constraint, which replaces
+the L0 penalty $\lambda\|\mathbf{w}\|_0$ with an L1 penalty $\lambda\|\mathbf{w}\|_1$
+in the objective (LASSO-type regularisation) and is solvable as a second-order cone
+programme.  Our experiments quantify (i)~the exponential blow-up in search space
+and runtime, (ii)~the quality gap between heuristics and the exact optimum,
+(iii)~SA convergence behaviour as a function of chain length, $k$, and $n$,
+(iv)~the cost of the cardinality constraint as $k$ grows toward~$N$,
+(v)~the sensitivity of algorithmic hardness to the tightness of the risk constraint,
+(vi)~how much of the search space must be sampled to find a near-optimal portfolio,
+and (vii)~the regularisation path and long-only floor of the L1 relaxation.
+\end{abstract}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Problem Formulation}
+\label{sec:formulation}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Let $\boldsymbol{\mu}\in\mathbb{R}^N$ be the vector of annualised expected
+returns, $\boldsymbol{\Sigma}\in\mathbb{R}^{N\times N}$ the annualised
+covariance matrix (positive definite), $\sigma_0^2>0$ a risk budget, and
+$k\leq N$ a prescribed portfolio size.  Portfolio weights
+$\mathbf{w}\in\mathbb{R}^N$ satisfy the budget constraint $\mathbf{1}^\top
+\mathbf{w}=1$; \textbf{short selling is allowed}, i.e.\ $w_i<0$ is permitted.
+
+\subsection{Continuous Relaxation: Markowitz Mean-Variance (Polynomial Time)}
+
+Dropping the cardinality constraint gives the classical Markowitz problem
+\cite{Markowitz1952}:
+\begin{equation}
+  R^*_{\text{MV}}
+  \;=\;
+  \max_{\mathbf{w}\in\mathbb{R}^N}\; \boldsymbol{\mu}^\top\mathbf{w}
+  \quad\text{s.t.}\quad
+  \mathbf{w}^\top\boldsymbol{\Sigma}\mathbf{w}\leq\sigma_0^2,\;
+  \mathbf{1}^\top\mathbf{w}=1.
+  \label{eq:mv}
+\end{equation}
+Because $\boldsymbol{\Sigma}\succ 0$ and the feasible set is a convex ellipsoid,
+problem~\eqref{eq:mv} is strictly convex and admits a \emph{closed-form} solution.
+
+\paragraph{Closed-form derivation.}
+Define the scalars
+\begin{equation}
+  A \;=\; \mathbf{1}^\top\boldsymbol{\Sigma}^{-1}\mathbf{1}, \quad
+  B \;=\; \mathbf{1}^\top\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}, \quad
+  C \;=\; \boldsymbol{\mu}^\top\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}, \quad
+  D \;=\; AC - B^2 > 0.
+  \label{eq:abcd}
+\end{equation}
+Because higher expected return requires a larger variance, the variance constraint
+is \emph{active} at the optimum.  The Lagrangian with multipliers $\lambda>0$
+(variance) and $\nu$ (budget) is
+\begin{equation}
+  \mathcal{L}(\mathbf{w},\lambda,\nu)
+  \;=\;
+  \boldsymbol{\mu}^\top\mathbf{w}
+  \;-\; \lambda\bigl(\mathbf{w}^\top\boldsymbol{\Sigma}\mathbf{w} - \sigma_0^2\bigr)
+  \;-\; \nu\bigl(\mathbf{1}^\top\mathbf{w} - 1\bigr).
+  \label{eq:lagrangian}
+\end{equation}
+The first-order condition $\partial\mathcal{L}/\partial\mathbf{w}=\mathbf{0}$ gives
+\begin{equation}
+  \boldsymbol{\mu} - 2\lambda\boldsymbol{\Sigma}\mathbf{w} - \nu\mathbf{1}
+  \;=\; \mathbf{0}
+  \quad\Longrightarrow\quad
+  \mathbf{w} \;=\; \frac{1}{2\lambda}\,\boldsymbol{\Sigma}^{-1}
+    \bigl(\boldsymbol{\mu}-\nu\mathbf{1}\bigr).
+  \label{eq:foc}
+\end{equation}
+Equation~\eqref{eq:foc} is the \emph{two-fund separation theorem}: every efficient
+portfolio is a linear combination of $\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$
+(tangency direction) and $\boldsymbol{\Sigma}^{-1}\mathbf{1}$ (minimum-variance
+direction).  Writing $\mathbf{w}^*=\alpha\,\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}
++\beta\,\boldsymbol{\Sigma}^{-1}\mathbf{1}$ and imposing the budget and target-return
+constraints at level $\mu^*$:
+\begin{align}
+  \mathbf{1}^\top\mathbf{w}^*=1 &\;\Longrightarrow\; \alpha B + \beta A \;=\; 1,
+  \label{eq:budget_cstr}\\
+  \boldsymbol{\mu}^\top\mathbf{w}^*=\mu^*
+  &\;\Longrightarrow\; \alpha C + \beta B \;=\; \mu^*.
+  \label{eq:return_cstr}
+\end{align}
+Solving the $2\times2$ system~\eqref{eq:budget_cstr}--\eqref{eq:return_cstr}
+(determinant $D=AC-B^2>0$):
+\begin{equation}
+  \alpha \;=\; \frac{A\mu^*-B}{D}, \qquad \beta \;=\; \frac{C-B\mu^*}{D}.
+  \label{eq:alphabeta}
+\end{equation}
+Substituting~\eqref{eq:alphabeta} into $\mathbf{w}^*=\alpha\boldsymbol{\Sigma}^{-1}
+\boldsymbol{\mu}+\beta\boldsymbol{\Sigma}^{-1}\mathbf{1}$ yields the optimal weights:
+\begin{equation}
+  \mathbf{w}^* \;=\; \frac{1}{D}\Bigl[
+    \bigl(C - B\mu^*\bigr)\,\boldsymbol{\Sigma}^{-1}\mathbf{1}
+    \;+\;
+    \bigl(A\mu^* - B\bigr)\,\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}
+  \Bigr].
+  \label{eq:mvweights}
+\end{equation}
+The frontier variance is
+\begin{equation}
+  \mathbf{w}^{*\top}\boldsymbol{\Sigma}\mathbf{w}^*
+  \;=\; \alpha^2 C + 2\alpha\beta B + \beta^2 A
+  \;=\; \frac{1}{A} + \frac{A}{D}\!\left(\mu^* - \frac{B}{A}\right)^{\!2},
+  \label{eq:frontier}
+\end{equation}
+which is the \emph{efficient frontier} parabola in $(\mu^*,\sigma^2)$ space,
+with global minimum-variance portfolio at $\sigma^2_{\min}=1/A$, attained when
+$\mu^*=B/A$.  Setting~\eqref{eq:frontier} equal to $\sigma_0^2$ and solving
+for $\mu^*$ (taking the upper branch, since larger $\mu^*$ requires higher variance):
+\begin{equation}
+  R^*_{\text{MV}} \;=\; \frac{B}{A} + \sqrt{\frac{D}{A}\left(\sigma_0^2
+  - \frac{1}{A}\right)}.
+  \label{eq:mvreturn}
+\end{equation}
+Problem~\eqref{eq:mv} is infeasible if and only if $\sigma_0^2 < 1/A$.
+
+\subsection{Cardinality-Constrained Problem (NP-Hard)}
+
+Fix a cardinality $k \leq N$.  For each subset $S \subseteq [N]$ with
+$|S|=k$, define the \emph{inner Markowitz problem} restricted to $S$:
+\begin{equation}
+  v(S) \;=\;
+  \max_{\mathbf{w}_S\in\mathbb{R}^k}\;
+    \boldsymbol{\mu}_S^\top\mathbf{w}_S
+  \quad\text{s.t.}\quad
+  \mathbf{w}_S^\top\boldsymbol{\Sigma}_S\mathbf{w}_S\leq\sigma_0^2,\;
+  \mathbf{1}^\top\mathbf{w}_S=1,
+  \label{eq:inner}
+\end{equation}
+where $\boldsymbol{\mu}_S$ and $\boldsymbol{\Sigma}_S$ are the restrictions of
+$\boldsymbol{\mu}$ and $\boldsymbol{\Sigma}$ to indices in $S$.  By
+equations~\eqref{eq:mvreturn}--\eqref{eq:mvweights} applied to the $k$-dimensional
+sub-problem, $v(S)$ is available in \emph{closed form} for any $S$.
+
+The cardinality-constrained problem is:
+\begin{equation}
+  \max_{\substack{S\subseteq[N] \\ |S|=k}}\; v(S).
+  \label{eq:card}
+\end{equation}
+Problem~\eqref{eq:card} is NP-hard.  This can be established via a polynomial
+reduction from the Maximum Weight Independent Set problem: given a weighted graph
+$G=(V,E)$ with $|V|=N$, one constructs a mean-variance instance on $N$ assets
+whose optimal $k$-subset of maximum expected return corresponds to a maximum-weight
+independent set of $G$; the reduction runs in polynomial time
+\cite{GareyJohnson1979}.  Consequently, no polynomial-time exact algorithm for
+problem~\eqref{eq:card} is expected to exist (unless $\mathsf{P}=\mathsf{NP}$),
+and the exponential growth of $\binom{N}{k}$ confirmed empirically in
+Experiment~A (\S\ref{sec:expA}) is a direct manifestation of this hardness.
+
+
+
+\subsection{L1 Relaxation (LASSO-Type Surrogate)}
+\label{sec:lasso_theory}
+
+Because problem~\eqref{eq:card} is NP-hard, a natural approach is to replace
+the intractable $\ell_0$ constraint with a convex surrogate.  The standard choice
+is to move the $\ell_0$ penalty into the objective and replace it with the $\ell_1$
+norm \cite{Tibshirani1996}:
+\begin{equation}
+  \max_{\mathbf{w}\in\mathbb{R}^n}\;
+    \boldsymbol{\mu}^\top\mathbf{w} - \lambda\|\mathbf{w}\|_1
+  \quad\text{s.t.}\quad
+  \mathbf{w}^\top\boldsymbol{\Sigma}\mathbf{w}\leq\sigma_0^2,\;
+  \mathbf{1}^\top\mathbf{w}=1,
+  \label{eq:lasso}
+\end{equation}
+where $\lambda\geq 0$ controls the trade-off between expected return and gross
+exposure $\|\mathbf{w}\|_1 = \sum_i|w_i|$.  Problem~\eqref{eq:lasso} is a
+second-order cone programme (SOCP) and is solvable in polynomial time.
+
+\paragraph{KKT conditions and soft-thresholding.}
+The Lagrangian of~\eqref{eq:lasso} includes a non-smooth term from $\|\mathbf{w}\|_1$.
+The first-order KKT stationarity condition at the optimum $\mathbf{w}^*$ is
+\begin{equation}
+  \mu_i \;-\; 2\gamma\bigl(\boldsymbol{\Sigma}\mathbf{w}^*\bigr)_i \;-\; \nu
+  \;\in\; \lambda\,\partial|w_i^*|,
+  \label{eq:lasso_kkt}
+\end{equation}
+where $\gamma\geq 0$ is the Lagrange multiplier on the variance constraint and $\nu$
+enforces the budget.  The subdifferential $\partial|w_i^*|$ equals $\{\operatorname{sign}(w_i^*)\}$ for
+$w_i^*\neq 0$ and $[-1,+1]$ for $w_i^*=0$.  Condition~\eqref{eq:lasso_kkt} yields
+a soft-thresholding rule: stock~$i$ is \emph{excluded} ($w_i^*=0$) if and only if
+\begin{equation}
+  \bigl|\mu_i - 2\gamma\bigl(\boldsymbol{\Sigma}\mathbf{w}^*\bigr)_i - \nu\bigr|
+  \;\leq\; \lambda,
+  \label{eq:exclusion}
+\end{equation}
+i.e.\ its risk-adjusted excess return lies within the penalty band $[-\lambda,\lambda]$.
+This is the portfolio analogue of the LASSO soft-thresholding rule in regression.
+Unlike regression LASSO, however, the threshold in~\eqref{eq:exclusion} is
+asset-specific through the covariance term $(\boldsymbol{\Sigma}\mathbf{w}^*)_i$,
+so there is no closed-form solution and a numerical solver is required.
+
+\paragraph{The long-only floor.}
+A structural limitation of the $\ell_1$ penalty arises from the budget constraint
+$\mathbf{1}^\top\mathbf{w}=1$.  For a portfolio with only long positions
+($w_i\geq 0$ for all $i$), the gross exposure equals the budget:
+$\|\mathbf{w}\|_1=\mathbf{1}^\top\mathbf{w}=1$.  Once~\eqref{eq:lasso} has
+eliminated all short positions, increasing $\lambda$ further leaves $\|\mathbf{w}\|_1$
+fixed at its minimum of $1$ for any allocation of the budget.  The $\ell_1$
+penalty therefore cannot distinguish among long-only portfolios with different
+cardinalities: all achieve the same penalty $\lambda\cdot 1$.  Consequently,
+the LASSO path reaches a \emph{long-only floor}: a minimum cardinality
+$k_{\min}^{\ell_1}$ beyond which further sparsification is impossible via $\ell_1$
+regularisation alone.  The L1 penalty confounds \emph{gross-exposure reduction}
+(eliminating short positions) with \emph{cardinality reduction} (selecting fewer
+stocks), conflating two structurally different operations into a single penalty.
+This limitation is studied empirically in Experiment~G (\S\ref{sec:expG}).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Data}
+\label{sec:data}
+% ─────────────────────────────────────────────────────────────────────────────
+
+We use daily adjusted-close returns for all $N=462$ S\&P~500 constituents
+available for the full sample period.  Tickers with more than 20\% missing
+observations are excluded; the remaining rows are kept only if complete across
+all retained tickers, yielding a balanced panel of $T=2{,}854$ trading days
+(January 2015 to May 2026) with no missing values.
+
+From the return matrix $\mathbf{R}\in\mathbb{R}^{T\times N}$:
+\[
+  \hat{\boldsymbol{\mu}} = 252\cdot\bar{\mathbf{r}},
+  \qquad
+  \hat{\boldsymbol{\Sigma}} = 252\cdot\widehat{\mathrm{Cov}}(\mathbf{R}).
+\]
+
+\subsection{Descriptive Statistics}
+\label{sec:descriptive}
+
+Figure~\ref{fig:data_overview} provides an overview of the return data.
+The top panel plots the cumulative wealth of six representative stocks
+(one per sector) over the full sample, illustrating the wide dispersion
+in long-run performance and the heterogeneity of risk.
+The middle panel displays the cross-sectional risk--return tradeoff
+for all 462 stocks together with the equal-weight portfolio.
+The bottom panel shows the histogram of daily returns for AAPL against the
+fitted Normal distribution, illustrating the fat tails characteristic of
+financial return series.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{fig0_data_overview.png}
+  \caption{Data overview.
+    \textit{Top}: cumulative wealth (initial \$1) for six representative stocks.
+    \textit{Middle}: annualised risk--return scatter for all 462 S\&P~500 stocks;
+      the red star marks the equal-weight portfolio.
+    \textit{Bottom}: daily return histogram for AAPL vs.\ a fitted Normal
+      distribution, highlighting negative skewness and excess kurtosis.}
+  \label{fig:data_overview}
+\end{figure}
+
+Table~\ref{tab:descriptive} summarises the cross-sectional distribution of
+key statistics for all 462 stocks.  Annualised returns range from $-1.56\%$
+(VTRS) to $65.67\%$ (NVDA) with a mean of $16.19\%$; annualised volatilities
+from $17.76\%$ to $68.45\%$ with a mean of $31.29\%$.  Daily return
+distributions exhibit strong negative skewness and pronounced fat tails:
+the median excess kurtosis is $11.43$, far exceeding the $0$ predicted by
+the Normal model.  These features motivate the use of in-sample variance as
+the risk measure, as the tail properties are too heterogeneous across stocks
+for a simple parametric treatment.
+
+\begin{table}[ht]
+\centering
+\caption{Cross-sectional descriptive statistics for daily returns of the
+  $N=462$ S\&P~500 stocks (annualised where indicated).}
+\label{tab:descriptive}
+\begin{tabular}{lrrrrrr}
+\toprule
+Statistic & Min & Q25 & Median & Mean & Q75 & Max \\
+\midrule
+Ann.\ return (\%)     & $-1.56$ & $10.86$ & $14.95$ & $16.19$ & $19.59$ & $65.67$ \\
+Ann.\ volatility (\%) & $17.76$ & $25.64$ & $29.42$ & $31.29$ & $35.34$ & $68.45$ \\
+Daily skewness        & $-6.76$ & $-0.39$ & $-0.06$ & $-0.07$ & $0.19$  & $11.27$ \\
+Excess kurtosis       & $3.28$  & $8.26$  & $11.43$ & $15.53$ & $16.07$ & $357.27$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Sample Covariance Matrix: Invertibility and Spectral Properties}
+\label{sec:rmt}
+
+\paragraph{Invertibility and condition number.}
+The sample covariance matrix $\hat{\boldsymbol{\Sigma}}$ is positive definite if
+and only if the return matrix $\mathbf{R}$ has full column rank, which requires
+$T > N$.  With $T=2{,}854$ and $N=462$ we have $T/N\approx 6$, so
+$\hat{\boldsymbol{\Sigma}}$ is invertible but can be poorly conditioned.  The
+condition number $\kappa(\hat{\boldsymbol{\Sigma}})=\lambda_{\max}/\lambda_{\min}$
+measures this: a large $\kappa$ means the inverse amplifies the directions
+corresponding to the smallest eigenvalues, assigning extreme weights to those
+eigendirections.  In high-dimensional financial datasets, the smallest eigenvalues
+are typically dominated by estimation noise, making the resulting Markowitz
+weights unstable and the expected-return estimate unreliable.
+
+\paragraph{Marchenko--Pastur law.}
+Under the null hypothesis that returns are i.i.d.\ Gaussian with variance
+$\sigma^2$, the empirical spectral distribution of $\hat{\boldsymbol{\Sigma}}$
+converges (as $T,N\to\infty$ with $T/N\to q>1$) to the
+\emph{Marchenko--Pastur law} \cite{MarchenkoPastur1967}:
+\begin{equation}
+  f_{\mathrm{MP}}(\lambda)
+  \;=\;
+  \frac{q}{2\pi\sigma^2}
+  \cdot
+  \frac{\sqrt{(\lambda_+ - \lambda)(\lambda - \lambda_-)}}{\lambda},
+  \quad \lambda\in[\lambda_-,\,\lambda_+],
+  \label{eq:mp}
+\end{equation}
+with bulk edges
+\begin{equation}
+  \lambda_{\pm} \;=\; \sigma^2\!\left(1 \pm \frac{1}{\sqrt{q}}\right)^{\!2}.
+  \label{eq:mpedges}
+\end{equation}
+Eigenvalues within $[\lambda_-,\lambda_+]$ are statistically indistinguishable
+from pure noise; only eigenvalues \emph{above} $\lambda_+$ represent genuine
+cross-asset correlations.
+
+For our dataset with $q=T/N\approx 6$, equation~\eqref{eq:mpedges} gives
+$\lambda_-/\sigma^2\approx 0.36$ and $\lambda_+/\sigma^2\approx 1.96$.
+A large fraction of the 462 eigenvalues of $\hat{\boldsymbol{\Sigma}}$ therefore
+fall within the Marchenko--Pastur bulk and carry no reliable information about
+the true covariance structure.  Inverting $\hat{\boldsymbol{\Sigma}}$ assigns
+large weights ($\sim 1/\lambda_{\min}$) to these noise-contaminated eigenvectors,
+which explains the inflated Markowitz upper bound of $R^*_{\text{MV}}=120.24\%$
+reported in Section~\ref{sec:algorithms} and Experiment~D: this figure reflects
+in-sample optimisation under a noisy inverse, not a reliable out-of-sample forecast.
+
+\paragraph{Implication for cardinality-constrained experiments.}
+The inner problems use $k\times k$ sub-matrices.  For all tractable experiments
+($k\leq 30$) the ratio $T/k>90$, placing those sub-problems in a well-conditioned
+regime where the Marchenko--Pastur bulk is narrow and eigenvalue estimation is
+reliable.  The quality comparisons in Experiment~B are therefore unaffected by
+the full-$N$ conditioning issue.
+
+\paragraph{Risk budget.}
+We set
+\begin{equation}
+  \sigma_0^2 \;=\; \mathrm{Quantile}_{25\%}\!\left(\operatorname{diag}
+    \hat{\boldsymbol{\Sigma}}\right),
+  \label{eq:riskbudget}
+\end{equation}
+i.e.\ the 25th percentile of individual stock variances, giving
+$\sigma_0 = 25.64\%$.  This ensures the inner problem~\eqref{eq:inner} is
+feasible for a substantial fraction of $k$-subsets: feasibility requires
+$\sigma_0^2 \geq 1/A_S$, which holds whenever the subset contains at least one
+sufficiently low-variance stock and weights can be chosen freely (short selling
+helps by allowing variance-reducing hedges).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Algorithms}
+\label{sec:algorithms}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Markowitz Upper Bound}
+
+We solve~\eqref{eq:mv} via the closed-form~\eqref{eq:mvreturn}--\eqref{eq:mvweights}
+with all $N=462$ assets.  The result $R^*_{\text{MV}}$ upper-bounds every
+cardinality-constrained solution.  Cost: $O(N^3)$ for the matrix inversion
+$\boldsymbol{\Sigma}^{-1}$.
+
+\subsection{Brute-Force Enumeration}
+
+For small $n$ and $k$ we enumerate all $\binom{n}{k}$ subsets and evaluate
+$v(S)$ via the closed-form inner solution for each.  Since each evaluation is
+$O(k^3)$, the total cost is $O\!\left(k^3\binom{n}{k}\right)$; it is
+feasible only for $\binom{n}{k}\lesssim 10^5$.
+
+\subsection{Greedy Forward Selection}
+
+Starting from $S=\emptyset$, we greedily add the asset that maximises
+$v(S\cup\{i\})$ among all remaining candidates, repeating $k$ times.
+Cost: $O(k\cdot n)$ closed-form evaluations.
+
+\begin{algorithm}[h]
+\caption{Sequential Greedy}
+\begin{algorithmic}[1]
+\State $S \leftarrow \emptyset$,\quad $C \leftarrow \{1,\ldots,N\}$
+\For{$t = 1,\ldots,k$}
+  \State $i^* \leftarrow \arg\max_{i\in C}\; v(S\cup\{i\})$
+  \If{no feasible $i^*$ exists} \textbf{break} \EndIf
+  \State $S \leftarrow S\cup\{i^*\}$,\quad $C \leftarrow C\setminus\{i^*\}$
+\EndFor
+\State \Return $S$, $v(S)$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Simulated Annealing as a Markov Chain}
+\label{sec:sa}
+
+We model the search as a \emph{Markov chain} on the discrete state space
+$\mathcal{X} = \binom{[N]}{k}$ of all $k$-subsets, with
+$|\mathcal{X}|=\binom{N}{k}$.  The transition kernel at state $S$ proposes a
+\textbf{swap}: draw $i\sim\mathrm{Uniform}(S)$ and $j\sim\mathrm{Uniform}
+([N]\setminus S)$, forming the candidate $S'=(S\setminus\{i\})\cup\{j\}$.
+The move is accepted with the Metropolis--Hastings probability
+\[
+  \alpha(S,S') \;=\; \min\!\left(1,\,e^{\bigl(v(S')-v(S)\bigr)/T_s}\right),
+\]
+where the temperature decreases geometrically:
+\begin{equation}
+  T_s = T_0\!\left(\frac{T_{\min}}{T_0}\right)^{s/M},
+  \quad s=0,1,\ldots,M,
+  \label{eq:cooling}
+\end{equation}
+with $M=2{,}000$, $T_0=0.004$, $T_{\min}=5\times10^{-5}$.
+
+The proposal kernel is symmetric (swap is reversible), so the chain satisfies
+detailed balance with respect to the Gibbs measure $\pi_T(S)\propto e^{v(S)/T}$
+at each fixed temperature.  As $T\to 0$ the chain concentrates on the global
+maximisers of $v$.  We run $R=3$ independent restarts and keep the global best.
+
+\paragraph{Computational cost per step.}
+Since short selling is permitted and the only constraint besides the variance
+bound is the budget equation $\mathbf{1}^\top\mathbf{w}_S=1$, the inner problem
+for each candidate subset reduces to the classical Markowitz problem and admits
+the closed-form solution~\eqref{eq:mvreturn}--\eqref{eq:mvweights}.  Each
+evaluation of $v(S)$ therefore requires a single matrix inversion ($O(k^3)$) and
+a handful of dot products; there is no iterative solver overhead.  For
+$k\leq 20$ this amounts to at most $\sim\!8{,}000$ floating-point operations,
+so the computational bottleneck is entirely the combinatorial outer search.
+
+\subsection{Mixing-Time Analysis of the Swap Chain}
+\label{sec:mixing}
+
+The observed fast convergence of SA ($O(10^3)$ steps even when
+$|\mathcal{X}|=\binom{N}{k}\approx 10^{20}$ for $k=10$) follows from
+a quantitative spectral-gap bound on the underlying Markov chain.
+
+\paragraph{State space and proposal kernel.}
+At any fixed temperature $T_s$, the SA chain is a reversible Markov
+chain on $\mathcal{X}=\binom{[N]}{k}$ with stationary distribution
+$\pi_{T_s}(S)\propto e^{v(S)/T_s}$.
+The proposal kernel draws a uniformly random \emph{swap}
+$(i,j)\in S\times([N]\setminus S)$, so each state $S$ has exactly
+\begin{equation}
+  \deg(S) = k(N-k)
+  \label{eq:degree}
+\end{equation}
+neighbours, and the underlying undirected graph is the
+\emph{Johnson graph} $J(N,k)$ \cite{Godsil1993}.
+
+\paragraph{Spectral gap of the uniform swap chain.}
+Consider first the \emph{uniform} chain obtained by setting $T_s\to\infty$
+(all swaps accepted); its stationary distribution is uniform on
+$\mathcal{X}$.
+The eigenvalues of the transition matrix of $J(N,k)$ are known from
+the theory of association schemes \cite{Godsil1993}: for $r=0,1,\ldots,k$,
+\begin{equation}
+  \lambda_r
+  \;=\;
+  1 - \frac{r(N+1-r)}{k(N-k)}.
+  \label{eq:jkeval}
+\end{equation}
+The spectral gap $\gamma^* = 1-\lambda_1$ is therefore
+\begin{equation}
+  \boxed{
+  \gamma^* \;=\; \frac{N}{k(N-k)}.
+  }
+  \label{eq:gap}
+\end{equation}
+For $N=462$, $k=10$: $\gamma^*=462/(10\cdot 452)\approx 0.102$;
+for $k=50$: $\gamma^*\approx 0.024$.
+
+\paragraph{Mixing-time bound.}
+For a reversible chain with spectral gap $\gamma^*$ and
+$|\mathcal{X}|=\binom{N}{k}$, the standard mixing-time theorem
+\cite{LevinPeres2017} gives
+\begin{equation}
+  \tau_{\mathrm{mix}}(\delta)
+  \;\leq\;
+  \frac{1}{\gamma^*}\!\left[\log|\mathcal{X}|+\log\frac{1}{\delta}\right]
+  \;=\;
+  \frac{k(N-k)}{N}
+  \left[\log\binom{N}{k}+\log\frac{1}{\delta}\right].
+  \label{eq:mixbound}
+\end{equation}
+Using $\log\binom{N}{k}\leq k\log(eN/k)$:
+\begin{equation}
+  \tau_{\mathrm{mix}}(\delta)
+  \;=\;
+  O\!\left(\frac{k^2(N-k)}{N}\log\frac{N}{k}\right).
+  \label{eq:mixO}
+\end{equation}
+Plugging in $N=462$, $k=10$, $\delta=0.05$:
+\[
+  \tau_{\mathrm{mix}} \;\lesssim\;
+  \frac{10^2\cdot 452}{462}\cdot\log\!\left(\frac{462}{10}\right)
+  \;\approx\; 748\text{ steps},
+\]
+consistent with the empirical plateau at $\sim\!500$ steps
+(Experiment~C, \S\ref{sec:expC}).
+For $k=50$: the bound gives $\approx 9{,}900$ steps, explaining the
+slower convergence observed for large cardinalities.
+
+\paragraph{Effect of the Metropolis acceptance step.}
+At finite temperature $T_s$, a proposed move is accepted with
+probability $\alpha(S,S')=\min(1,e^{(v(S')-v(S))/T_s})\geq e^{-\Delta/T_s}$,
+where $\Delta=\max_{S,S'\text{ adjacent}}|v(S)-v(S')|$ is the maximum
+energy change over a single swap.
+The spectral gap of the Metropolis chain satisfies \cite{LawlerSokal1988}
+\begin{equation}
+  \gamma^*_{\mathrm{MH}}
+  \;\geq\;
+  e^{-\Delta/T_s}\,\gamma^*_{\mathrm{unif}},
+  \label{eq:mhgap}
+\end{equation}
+so at high temperatures (early in the SA schedule, large $T_s$),
+the gap is close to $\gamma^*=N/[k(N-k)]$ and mixing is rapid.
+As $T_s\to 0$ the gap contracts, but the chain has already
+concentrated near the optimal region of $\mathcal{X}$, so further
+refinement requires only local moves.
+
+\paragraph{Implication for the cooling schedule.}
+Equation~\eqref{eq:mixO} establishes that $O(k^2\log(N/k))$ steps
+suffice for the \emph{uniform} chain to mix, independently of
+$|\mathcal{X}|$.
+The super-exponential cardinality of $\mathcal{X}$ does not appear in
+this bound; what matters is the degree $k(N-k)$, which keeps the spectral
+gap~\eqref{eq:gap} bounded away from zero.
+For the SA schedule~\eqref{eq:cooling} with $M=2{,}000$ steps,
+the total chain length comfortably exceeds $\tau_{\mathrm{mix}}$ in
+the high-temperature phase, giving SA its empirically fast convergence
+to near-optimal portfolios even for $N=462$.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experiments}
+\label{sec:experiments}
+% ─────────────────────────────────────────────────────────────────────────────
+
+All experiments use the risk budget~\eqref{eq:riskbudget} ($\sigma_0=25.64\%$).
+
+\paragraph{Experimental design: tractability and fair comparison.}
+Brute-force enumeration is the only method that produces a provably exact optimum,
+but its cost $O\!\left(k^3\binom{n}{k}\right)$ limits it to instances where
+$\binom{n}{k}\lesssim 10^5$, i.e.\ $n\lesssim 30$ for $k=5$ (see
+Experiment~A).  Any experiment that uses brute force as a benchmark must
+therefore restrict \emph{all} competing methods --- including the Markowitz
+upper bound --- to the \emph{same} $n$-stock sub-universe; otherwise the
+comparison conflates the effect of the algorithm with the effect of working on
+a different instance.  For experiments that do not require an exact reference
+(Experiments C--D), the full $N=462$ universe is used for both greedy and SA.
+
+\subsection{Experiment A: Computational Scaling}
+\label{sec:expA}
+
+Figure~\ref{fig:scaling} (left) plots $\binom{n}{k}$ as a function of $n$ for
+$k\in\{5,10,20\}$ on a log scale, illustrating the super-exponential growth.
+Figure~\ref{fig:scaling} (right) records actual brute-force runtimes for $k=5$.
+Measured times are: $n=10$: $252$ subsets, ${<}0.1$\,s; $n=15$: $3{,}003$
+subsets, $0.1$\,s; $n=20$: $15{,}504$ subsets, $0.5$\,s; $n=25$: $53{,}130$
+subsets, $1.8$\,s; $n=30$: $142{,}506$ subsets, $4.9$\,s.
+A log-log extrapolation predicts infeasibility beyond $n\approx 40$--45 for $k=5$.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{fig2_scaling.png}
+  \caption{Search space size $\binom{n}{k}$ (left) and measured brute-force
+    runtime (right) as functions of universe size~$n$ for $k=5$.}
+  \label{fig:scaling}
+\end{figure}
+
+\subsection{Experiment B: Algorithm Quality Comparison}
+\label{sec:expB}
+
+For $n=30$, $k=5$ ($\binom{30}{5}=142{,}506$ subsets, within the brute-force
+budget), we compare all four methods on the \emph{same} curated sub-universe
+of 30 large-cap S\&P~500 stocks spanning six sectors (Technology, Financials,
+Healthcare, Energy, Consumer Staples, and Consumer Discretionary).  Crucially,
+the Markowitz upper bound is computed on this 30-stock sub-universe --- not the
+full $N=462$ universe --- so that all four numbers reflect identical input data
+and the comparison is exact.  Table~\ref{tab:quality} summarises the results;
+Figure~\ref{fig:quality} shows the bar chart.
+
+\begin{table}[ht]
+\centering
+\caption{Algorithm quality comparison ($n=30$, $k=5$, $\sigma_0=25.64\%$).
+  Gap is relative to brute-force optimal.
+  The MV--BF gap measures the price of the cardinality constraint.}
+\label{tab:quality}
+\begin{tabular}{lcc}
+\toprule
+Method & Ann.\ return & Gap vs.\ BF optimal \\
+\midrule
+Markowitz upper bound (no cardinality) & $47.79\%$ & $+12.56\%$\textsuperscript{a} \\
+Brute-force (optimal $k=5$)            & $41.79\%$ & $0\%$ \\
+Greedy                                 & $40.49\%$ & $3.11\%$ \\
+Simulated Annealing                    & $41.79\%$ & $0.00\%$ \\
+\bottomrule
+\multicolumn{3}{l}{\small\textsuperscript{a}Cardinality gap: cost of restricting to 5 assets.}
+\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.62\linewidth]{fig3_quality_comparison.png}
+  \caption{Annualised return achieved by each method ($n=30$, $k=5$).
+    Red = Markowitz upper bound; green = brute-force optimum.}
+  \label{fig:quality}
+\end{figure}
+
+SA matches the brute-force optimum exactly ($41.79\%$, $0.00\%$ gap), while
+greedy obtains $40.49\%$ ($3.11\%$ gap).
+The $12.56\%$ gap between the Markowitz upper bound ($47.79\%$) and the
+brute-force optimal ($41.79\%$) quantifies the \emph{price of the cardinality
+constraint} at $k=5$.
+
+\subsection{Experiment C: SA Convergence as a Markov Chain}
+\label{sec:expC}
+
+No exact benchmark is needed here; greedy and SA are run on the full $N=462$
+universe.  Figure~\ref{fig:sa_convergence} traces the best-so-far return against
+Markov chain step, averaged over $R=3$ restarts, for varying $k$ with $n=462$
+fixed (left) and varying $n$ with $k=10$ fixed (right).
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{fig4_sa_convergence.png}
+  \caption{SA convergence curve.  Left: $n=462$ fixed, $k\in\{5,10,20,50\}$
+    varied.  Right: $k=10$ fixed, $n\in\{20,50,462\}$ varied.
+    Each curve is averaged over 3 restarts.}
+  \label{fig:sa_convergence}
+\end{figure}
+
+Final SA returns for $n=462$ were: $k=5$: $49.07\%$; $k=10$: $57.72\%$;
+$k=20$: $68.24\%$; $k=50$: $84.91\%$.
+For $k=10$ varying $n$: $n=20$: $32.68\%$; $n=50$: $46.31\%$; $n=462$: $57.33\%$.
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Convergence is rapid in the first $\sim\!500$ steps and plateaus
+    thereafter, independent of $n$ or $k$.
+  \item Larger $k$ attains higher absolute returns; the convergence
+    \emph{rate} is similar across $k$.
+  \item Larger $n$ mildly slows convergence: the chain navigates a larger
+    neighbourhood ($k(N-k)$ neighbours per state), reducing the probability of
+    beneficial swaps.
+\end{itemize}
+
+The observed mixing time of $O(10^3)$ steps, even when $|\mathcal{X}|=
+\binom{N}{k}$ reaches $\binom{462}{10}\approx 10^{20}$ for $k=10$, is consistent
+with the high vertex degree $k(N-k)$ maintaining a large spectral gap.
+
+\subsection{Experiment D: Cost of the Cardinality Constraint}
+\label{sec:expD}
+
+Since this experiment studies how the cardinality constraint cost shrinks with
+$k$ and does not require a brute-force benchmark, greedy and SA are run on the
+full $n=N=462$ universe.  Figure~\ref{fig:gap_vs_k} shows annualised return
+(left) and gap relative to the Markowitz upper bound (right) as a function of
+portfolio size~$k$.  Table~\ref{tab:gap_vs_k} gives selected values.
+
+\begin{table}[ht]
+\centering
+\caption{Greedy and SA returns and gaps vs.\ Markowitz UB ($120.24\%$) as $k$
+  varies ($n=462$, $\sigma_0=25.64\%$).}
+\label{tab:gap_vs_k}
+\begin{tabular}{rcccc}
+\toprule
+$k$ & Greedy & SA & Greedy gap & SA gap \\
+\midrule
+  1 & $23.30\%$ & $23.30\%$ & $80.62\%$ & $80.62\%$ \\
+  2 & $39.66\%$ & $39.66\%$ & $67.01\%$ & $67.01\%$ \\
+  3 & $43.48\%$ & $42.67\%$ & $63.84\%$ & $64.51\%$ \\
+  5 & $49.67\%$ & $49.67\%$ & $58.69\%$ & $58.69\%$ \\
+  7 & $53.85\%$ & $53.96\%$ & $55.22\%$ & $55.12\%$ \\
+ 10 & $58.92\%$ & $58.47\%$ & $51.00\%$ & $51.37\%$ \\
+ 15 & $65.25\%$ & $64.07\%$ & $45.73\%$ & $46.71\%$ \\
+ 20 & $70.08\%$ & $68.37\%$ & $41.72\%$ & $43.14\%$ \\
+ 30 & $76.76\%$ & $75.93\%$ & $36.16\%$ & $36.85\%$ \\
+ 50 & $86.90\%$ & $84.30\%$ & $27.73\%$ & $29.89\%$ \\
+100 & $101.39\%$ & $97.80\%$ & $15.68\%$ & $18.66\%$ \\
+200 & $114.53\%$ & $111.60\%$ &  $4.75\%$ &  $7.19\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{fig5_gap_vs_k.png}
+  \caption{Return and gap vs.\ Markowitz upper bound as functions of portfolio
+    size~$k$ ($n=462$).  The dashed line is $R^*_{\text{MV}}=120.24\%$.}
+  \label{fig:gap_vs_k}
+\end{figure}
+
+Both greedy and SA monotonically reduce the gap as $k$ grows.  The gap
+starts at $80.62\%$ for a single-stock portfolio ($k=1$) and narrows to
+$4.75\%$ (greedy) and $7.19\%$ (SA) at $k=200$.  Convergence toward the
+Markowitz upper bound is slow relative to the $N=462$ universe: at $k=50$,
+the gap still exceeds $27\%$.  Notably, greedy outperforms SA at several
+cardinality levels (e.g.\ $k=10$, $15$, $20$), suggesting that 2,000 SA
+steps are insufficient to explore the vastly larger neighbourhood
+$k(N-k)\approx 4{,}500$ of $\binom{462}{k}$ compared with smaller universes.
+
+\subsection{Experiment E: Constraint Tightness and Problem Hardness}
+\label{sec:expE}
+
+We fix $n=35$, $k=5$ ($\binom{35}{5}=324{,}632$ subsets) and sweep $\sigma_0$
+from the 5th to the 95th percentile of the empirical distribution of equal-weight
+portfolio variances across all subsets.  Figure~\ref{fig:tightness} shows
+feasibility fraction, optimal return, and greedy gap as functions of $\sigma_0$.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{fig6_constraint_tightness.png}
+  \caption{Feasibility (left), optimal return (middle), and greedy gap (right)
+    as functions of $\sigma_0$ ($n=35$, $k=5$).}
+  \label{fig:tightness}
+\end{figure}
+
+The minimum achievable variance $1/A_S$ for a given subset $S$ can be
+substantially lower than its equal-weight variance, since unconstrained weights
+allow variance-reducing short positions.  Consequently, a non-trivial fraction of
+subsets remain feasible even for tight values of $\sigma_0$.  Empirical hardness,
+measured by the greedy gap, peaks at moderate constraint tightness --- where only
+a fraction of subsets are feasible and the feasible ones are nearly tied in
+return --- and declines at both extremes.
+
+\subsection{Experiment F: Random Sampling Discovery}
+\label{sec:expF}
+
+We pre-compute $v(S)$ for all $\binom{35}{5}=324{,}632$ subsets via the
+closed-form and simulate random search over 50 trials.
+Figure~\ref{fig:discovery} (left) plots the fraction of the optimal return
+achieved as a function of the fraction of the search space sampled.
+Figure~\ref{fig:discovery} (right) shows the full distribution of $v(S)$ across
+feasible subsets.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\linewidth]{fig7_random_sampling.png}
+  \caption{Random sampling discovery curve (left) and distribution of all
+    feasible portfolio returns (right) for $n=35$, $k=5$.}
+  \label{fig:discovery}
+\end{figure}
+
+Of the $324{,}632$ subsets, $323{,}027$ ($99.5\%$) are feasible under the chosen
+risk budget.  The optimal return across all feasible subsets is $43.03\%$.
+Random search reaches $90\%$ of this optimal by sampling only $0.50\%$ of the
+search space, and $99\%$ of optimal by sampling $34.17\%$.  The density of
+near-optimal portfolios in the search space explains the fast practical
+convergence of SA despite $|\mathcal{X}|=\binom{N}{k}$ growing super-exponentially
+with $N$.
+
+\subsection{Experiment G: LASSO Relaxation}
+\label{sec:expG}
+
+We solve problem~\eqref{eq:lasso} on the same $n=30$ BF\_TICKERS sub-universe
+as Experiment~B, sweeping $\lambda$ over 100 log-spaced values from $10^{-3}$
+to $1$.  All 30 large-cap stocks in BF\_TICKERS have individual volatility above
+the risk limit $\sigma_0=25.64\%$; only four names (V, JNJ, PFE, MRK) can form a
+feasible single-stock portfolio.
+
+\paragraph{Regularisation path.}
+Figure~\ref{fig:lasso_path} traces the LASSO regularisation path.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{fig8_lasso_path.png}
+  \caption{LASSO regularisation path ($n=30$, $\sigma_0=25.64\%$).
+    \textit{Left}: annualised return vs.\ $\lambda$.
+    \textit{Centre}: gross exposure $\|\mathbf{w}\|_1$ vs.\ $\lambda$;
+      the red dashed line marks $\|\mathbf{w}\|_1=1$ (long-only).
+    \textit{Right}: effective cardinality $k_{\text{eff}}$ (weights $>1\%$ in
+      magnitude) vs.\ $\lambda$; the dashed line marks the long-only floor $k=9$.}
+  \label{fig:lasso_path}
+\end{figure}
+
+At small $\lambda$ the LASSO solution approximates the dense Markowitz portfolio
+($k_{\text{eff}}=26$, $\|\mathbf{w}\|_1=4.02$, return $47.79\%$).  As $\lambda$
+increases, the penalty progressively shrinks short positions: gross exposure falls
+monotonically toward $1$, and $k_{\text{eff}}$ decreases from 26 to~9.  Once
+$\|\mathbf{w}\|_1=1$ is reached (all weights non-negative), the path stalls:
+$k_{\text{eff}}$ remains at~9 and the return stabilises at $41.31\%$
+for all $\lambda \gtrsim 0.06$.
+
+This is a direct empirical manifestation of the \emph{long-only floor} derived in
+\S\ref{sec:lasso_theory}: the $\ell_1$ penalty can reduce gross exposure but cannot
+reduce cardinality below the minimum long-only feasible count for this universe.
+The floor $k_{\min}^{\ell_1}=9$ is a structural property of the data and the risk
+constraint, not of the algorithm.
+
+\paragraph{Comparison with cardinality-constrained methods.}
+Figure~\ref{fig:lasso_comparison} compares LASSO (at the $k_{\text{eff}}$ values
+it achieves) with SA and greedy on the same universe.
+Table~\ref{tab:lasso_comparison} quantifies the \emph{price of convexification}:
+the return gap between the exact L0 methods and the L1 surrogate at matched
+effective cardinality.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\linewidth]{fig9_lasso_comparison.png}
+  \caption{Method comparison ($n=30$, $\sigma_0=25.64\%$).
+    LASSO is plotted only at the $k_{\text{eff}}$ values it achieves ($k\geq 9$);
+    the vertical dotted line marks its long-only floor at $k=9$.
+    Brute-force stars give the exact optimum for $k\leq 5$.}
+  \label{fig:lasso_comparison}
+\end{figure}
+
+\begin{table}[ht]
+\centering
+\caption{Price of convexification: LASSO return vs.\ SA and greedy at matched
+  effective cardinality ($n=30$, $\sigma_0=25.64\%$).
+  Negative gaps indicate LASSO underperforms the L0 method.}
+\label{tab:lasso_comparison}
+\begin{tabular}{rcccrr}
+\toprule
+$k$ & SA & Greedy & LASSO & LASSO$-$SA & LASSO$-$Greedy \\
+\midrule
+ 9 & $44.62\%$ & $42.70\%$ & $41.31\%$ & $-7.40\%$ & $-3.25\%$ \\
+10 & $45.18\%$ & $43.68\%$ & $41.45\%$ & $-8.25\%$ & $-5.10\%$ \\
+12 & $45.82\%$ & $45.60\%$ & $41.73\%$ & $-8.91\%$ & $-8.48\%$ \\
+15 & $46.71\%$ & $46.46\%$ & $43.67\%$ & $-6.51\%$ & $-6.02\%$ \\
+17 & $47.19\%$ & $46.96\%$ & $45.22\%$ & $-4.16\%$ & $-3.70\%$ \\
+19 & $47.51\%$ & $47.40\%$ & $46.41\%$ & $-2.31\%$ & $-2.09\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two observations stand out.  First, LASSO consistently underperforms both SA
+and greedy at every matched cardinality level.  The gap is largest at $k=12$
+($-8.91\%$ vs.\ SA) and narrows as $k$ grows toward the Markowitz UB ($47.79\%$),
+because the L1 penalty has less work to do when the unconstrained solution is already
+close to long-only.  Second, the LASSO floor at $k=9$ ($41.31\%$) lies below the
+brute-force optimum at $k=5$ ($41.79\%$), yet uses $80\%$ more stocks.
+This illustrates the key cost of the L1 relaxation: it cannot replicate the
+short-selling strategy that allows exact methods to achieve high returns with few
+stocks.  The exact $k=5$ solution (NVDA, JPM, WFC, JNJ, LLY) uses a mix of
+long and short positions ($\|\mathbf{w}\|_1>1$) that is penalised out of the
+LASSO path.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion}
+\label{sec:discussion}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\paragraph{Tractability of the inner problem.}
+Because short selling is permitted, the only constraints on $\mathbf{w}_S$ are
+the budget equation $\mathbf{1}^\top\mathbf{w}_S=1$ and the variance bound.
+The inner problem~\eqref{eq:inner} is therefore an equality-constrained strictly
+convex quadratic program --- exactly the classical Markowitz mean-variance
+problem --- and its solution is given in closed form by
+equations~\eqref{eq:mvreturn}--\eqref{eq:mvweights}.  Each evaluation of $v(S)$
+reduces to a single $k\times k$ matrix inversion and a few dot products,
+incurring no iterative solver overhead.  The sole computational bottleneck of
+problem~\eqref{eq:card} therefore lies in the combinatorial outer search over
+$\binom{n}{k}$ subsets, not in the per-subset optimisation.
+
+\paragraph{Short selling and feasibility.}
+The minimum achievable variance for a $k$-subset $S$ is $\sigma^2_{\min,S}=1/A_S$,
+attained by the global minimum-variance portfolio of $S$.  Because weights are
+unconstrained, short positions allow the variance to be pushed well below what
+any convex combination of the assets could achieve, so the feasibility threshold
+$\sigma_0^2 \geq 1/A_S$ is met for a wide range of subsets.  Concretely,
+Experiment~F establishes that $99.5\%$ of all $\binom{35}{5}=324{,}632$
+five-asset subsets are feasible under the calibrated risk budget $\sigma_0=25.64\%$.
+
+\paragraph{NP-hardness of the outer search.}
+The tractability of the inner problem does not extend to the cardinality-constrained
+problem~\eqref{eq:card}.  The combinatorial state space $\mathcal{X}=\binom{[N]}{k}$
+has cardinality $\binom{N}{k}$, which grows super-exponentially with $N$; no
+polynomial-time algorithm is known for the outer optimisation.  Greedy and SA
+therefore remain heuristics, and their quality must be assessed empirically
+against the brute-force optimum on tractable instances.
+
+\paragraph{Risk budget calibration.}
+Equation~\eqref{eq:riskbudget} anchors $\sigma_0^2$ to individual stock
+variances, not portfolio variance.  This is essential: calibrating on the
+diversified $N$-stock portfolio variance ($\approx 3.26\%$ annualised) would
+produce a limit far below $\sigma^2_{\min,S}$ for small $k$, rendering every
+inner problem infeasible.
+
+\paragraph{L1 relaxation and the long-only floor.}
+Experiment~G reveals that the L1 penalty in the LASSO surrogate~\eqref{eq:lasso}
+operates primarily by eliminating short positions (reducing $\|\mathbf{w}\|_1$
+from 4.02 to 1), not by directly selecting fewer stocks.  Once the solution is
+long-only, further sparsification via $\ell_1$ is structurally impossible (the
+floor at $k=9$), and the price of convexification is substantial: LASSO at $k=9$
+yields $41.31\%$, below SA at $k=5$ ($41.79\%$) which uses short positions to
+concentrate return in fewer stocks.  These results suggest that the L1 surrogate
+is most appropriate when short selling is restricted by mandate, or when gross
+exposure is the primary concern rather than stock-count reduction.
+
+\paragraph{Estimation risk.}
+With $T/N\approx 6$, the full $462\times 462$ sample covariance matrix
+is near-rank-deficient, so the Markowitz upper bound of $120.24\%$ reflects
+in-sample optimisation under noisy estimates rather than a meaningful out-of-sample
+target (see \S\ref{sec:rmt}).  The cardinality-constrained results for $k\leq 30$
+are unaffected, as the corresponding $k\times k$ sub-matrices satisfy $T/k>90$.
+Shrinkage estimators (e.g.\ Ledoit--Wolf \cite{LedoitWolf2004}) or factor models
+would improve the conditioning of $\hat{\boldsymbol{\Sigma}}$ and yield more
+reliable estimates of the Markowitz upper bound; this is a natural direction for
+future work.
+
+\paragraph{Interpreting the Markowitz upper bound.}
+The Markowitz upper bound of $R^*_{\text{MV}}=120.24\%$ should not be
+read as a realistic performance target.
+It is an in-sample artefact produced by inverting a $462\times462$
+sample covariance matrix whose smallest eigenvalues are dominated by
+estimation noise (see \S\ref{sec:rmt}): the optimizer exploits these
+noise directions to construct extreme long--short positions
+(231 long, 224 short) that look profitable in-sample but would not
+generalise out-of-sample.
+Its role in our analysis is purely as a \emph{ceiling} that anchors the
+gap curves in Experiments~D and~G since it tells us how much return is
+theoretically available to an unconstrained optimizer on the same data,
+not how much an investor could realistically earn.
+The comparisons that carry practical weight are those \emph{among} the
+cardinality-constrained methods: SA versus greedy on the same
+sub-universe (Experiment~B), the price of convexification between L0
+and L1 methods at matched cardinality (Experiment~G), and the
+convergence behaviour of SA across different values of $k$ (Experiment~C).
+These comparisons are unaffected by the full-$N$ conditioning issue
+because they operate on $k\times k$ sub-matrices.
+A shrinkage estimator applied
+to the full covariance matrix would compress the upper bound toward a
+more credible figure, but would leave the relative rankings among
+cardinality-constrained methods unchanged, since those rankings depend
+on the sub-matrix structure rather than the full inverse.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+% ─────────────────────────────────────────────────────────────────────────────
+
+We studied cardinality-constrained Markowitz portfolio optimisation on $N=462$
+S\&P~500 stocks ($T=2{,}854$ trading days), with short selling allowed.
+The key findings are:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Without a cardinality constraint the problem reduces to classical
+    Markowitz mean-variance optimisation and has a closed-form solution via
+    the two-fund separation theorem, achieving $R^*_{\text{MV}}=120.24\%$
+    (in-sample) at $\sigma_0=25.64\%$ with 231 long and 224 short positions.
+  \item Adding $|\operatorname{supp}(\mathbf{w})|=k$ makes the outer search
+    super-exponential; the closed-form inner solution is used to evaluate
+    each of the $\binom{N}{k}$ candidate subsets efficiently.
+  \item Brute force becomes infeasible around $n\approx 40$--45 for $k=5$;
+    on the curated 30-stock sub-universe, SA matches the brute-force optimal
+    exactly ($41.79\%$, $0.00\%$ gap) while greedy obtains $40.49\%$
+    ($3.11\%$ gap) at $k=5$.
+  \item SA, viewed as a Markov chain on $\binom{[N]}{k}$, converges within
+    $\sim\!500$--$1{,}000$ steps even for $|\mathcal{X}|\approx 10^{20}$
+    ($N=462$, $k=10$), consistent with a large spectral gap due to high vertex
+    degree $k(N-k)$.
+  \item The cardinality constraint gap decreases monotonically with $k$, from
+    $80.62\%$ at $k=1$ to $4.75\%$ at $k=200$ (greedy); convergence is
+    noticeably slower for large universes.
+  \item Empirical hardness (greedy gap) peaks at moderate constraint tightness.
+  \item $99.5\%$ of all 5-subsets of 35 stocks are feasible; random search
+    achieves $99\%$ of the optimal return by sampling $34.17\%$ of the search
+    space, confirming a dense return landscape near the optimum.
+  \item The L1 (LASSO) relaxation of the cardinality constraint is solvable as
+    an SOCP but reveals a structural limitation: it reduces cardinality by
+    eliminating short positions (gross exposure $\|\mathbf{w}\|_1$ falls from
+    4.02 to~1), not by directly selecting fewer stocks.  Once the portfolio is
+    long-only, further sparsification is impossible via $\ell_1$ alone.  The
+    resulting \emph{long-only floor} at $k=9$ yields $41.31\%$, below the
+    exact $k=5$ optimum ($41.79\%$) that exploits short selling.
+    The price of convexification at matched cardinality ranges from $-2.3\%$
+    to $-8.9\%$ vs.\ SA.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{thebibliography}{9}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\bibitem{Markowitz1952}
+Markowitz, H.\ (1952).
+Portfolio selection.
+\textit{Journal of Finance}, 7(1), 77--91.
+
+\bibitem{GareyJohnson1979}
+Garey, M.~R.\ and Johnson, D.~S.\ (1979).
+\textit{Computers and Intractability: A Guide to the Theory of
+NP-Completeness}.
+W.~H.\ Freeman, New York.
+
+\bibitem{MarchenkoPastur1967}
+Mar\v{c}enko, V.~A.\ and Pastur, L.~A.\ (1967).
+Distribution of eigenvalues for some sets of random matrices.
+\textit{Mathematics of the USSR-Sbornik}, 1(4), 457--483.
+
+\bibitem{Tibshirani1996}
+Tibshirani, R.\ (1996).
+Regression shrinkage and selection via the lasso.
+\textit{Journal of the Royal Statistical Society: Series B}, 58(1), 267--288.
+
+\bibitem{LedoitWolf2004}
+Ledoit, O.\ and Wolf, M.\ (2004).
+A well-conditioned estimator for large-dimensional covariance matrices.
+\textit{Journal of Multivariate Analysis}, 88(2), 365--411.
+
+\bibitem{Bienstock1996}
+Bienstock, D.\ (1996).
+Computational study of a family of mixed-integer quadratic programming
+problems.
+\textit{Mathematical Programming}, 74(2), 121--140.
+
+\bibitem{Godsil1993}
+Godsil, C.\ (1993).
+\textit{Algebraic Combinatorics}.
+Chapman \& Hall, New York.
+
+\bibitem{LevinPeres2017}
+Levin, D.~A.\ and Peres, Y.\ (2017).
+\textit{Markov Chains and Mixing Times} (2nd ed.).
+American Mathematical Society, Providence.
+
+\bibitem{LawlerSokal1988}
+Lawler, G.~F.\ and Sokal, A.~D.\ (1988).
+Bounds on the $L^2$ spectrum for Markov chains and Markov processes:
+a generalization of Cheeger's inequality.
+\textit{Transactions of the American Mathematical Society},
+309(2), 557--580.
+
+\bibitem{KellererMansiniSperanza2000}
+Kellerer, H., Mansini, R., and Speranza, M.~G.\ (2000).
+Selecting portfolios with fixed costs and minimum transaction lots.
+\textit{Annals of Operations Research}, 99(1--4), 287--304.
+
+\end{thebibliography}
+
+\end{document}
